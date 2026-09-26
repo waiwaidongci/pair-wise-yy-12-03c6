@@ -1,128 +1,125 @@
+import { useEffect, useState } from "react";
 import "./styles.css";
+import HorseList from "./components/HorseList";
+import HorseDetail from "./components/HorseDetail";
+import Reminders from "./components/Reminders";
+import { loadData, saveData } from "./storage";
+import { uid } from "./constants";
+import type { ArchiveData, HorseUsage, TrimRecord } from "./types";
+import type { RecordInput } from "./components/RecordForm";
+import { allOpenRecords } from "./logic";
 
-const project = {
-  "sourceNo": 6,
-  "id": "hxyfront-62011",
-  "port": 62011,
-  "title": "马术蹄铁修整档案",
-  "domain": "马术蹄铁",
-  "prompt": "做一个面向马术俱乐部蹄铁师的修蹄记录前端项目，可以记录马匹编号、步态问题、蹄形评估、蹄铁类型、钉位、修蹄日期、下次复查日期和照片备注。页面需要有马匹列表、复查提醒、左右前后蹄对比记录、异常步态标记和蹄铁更换历史。",
-  "palette": [
-    "#78350f",
-    "#166534",
-    "#2563eb"
-  ],
-  "metrics": [
-    "待复查",
-    "异常步态",
-    "更换蹄铁",
-    "马匹档案"
-  ],
-  "filters": [
-    "前蹄",
-    "后蹄",
-    "运动马",
-    "休养马"
-  ],
-  "fields": [
-    "马匹编号",
-    "步态问题",
-    "蹄形评估",
-    "蹄铁类型",
-    "钉位",
-    "下次复查"
-  ],
-  "records": [
-    [
-      "HORSE-18",
-      "右前蹄外侧磨耗",
-      "铝蹄铁",
-      "14天后复查"
-    ],
-    [
-      "HORSE-27",
-      "后蹄裂纹",
-      "加护蹄垫",
-      "拍照归档"
-    ],
-    [
-      "HORSE-31",
-      "步态轻微不稳",
-      "需教练复核",
-      "已标记"
-    ]
-  ]
-};
+type View = { page: "list" } | { page: "horse"; horseId: string; recordId?: string } | { page: "reminders" };
 
-function App() {
+export default function App() {
+  const [data, setData] = useState<ArchiveData>(() => loadData());
+  const [view, setView] = useState<View>({ page: "list" });
+
+  // 保存过的档案写入本地，重新打开页面仍能找到
+  useEffect(() => {
+    saveData(data);
+  }, [data]);
+
+  const openCount = allOpenRecords(data.records).length;
+
+  function addHorse(code: string, name: string, usage: HorseUsage) {
+    const horse = { id: uid("horse"), code, name, usage, createdAt: Date.now() };
+    setData((d) => ({ ...d, horses: [...d.horses, horse] }));
+    setView({ page: "horse", horseId: horse.id });
+  }
+
+  function saveRecord(horseId: string, input: RecordInput) {
+    const record: TrimRecord = {
+      id: uid("rec"),
+      horseId,
+      date: input.date,
+      isFollowUp: input.isFollowUp,
+      resolvesRecordId: input.resolvesRecordId,
+      gait: { abnormal: input.gaitAbnormal, problem: input.gaitProblem },
+      hooves: input.hooves,
+      nextCheckDate: input.nextCheckDate,
+      reasons: input.reasons,
+      conclusion: input.conclusion,
+      photoNote: input.photoNote,
+      createdAt: Date.now(),
+    };
+    setData((d) => ({ ...d, records: [...d.records, record] }));
+  }
+
+  function savePhotoNote(recordId: string, note: string) {
+    setData((d) => ({
+      ...d,
+      records: d.records.map((r) => (r.id === recordId ? { ...r, photoNote: note } : r)),
+    }));
+  }
+
+  function resetData() {
+    if (!window.confirm("确定清空当前档案并恢复示例数据？")) return;
+    localStorage.removeItem("farrier-archive-v1");
+    const fresh = loadData();
+    setData(fresh);
+    setView({ page: "list" });
+  }
+
+  const currentHorse =
+    view.page === "horse" ? data.horses.find((h) => h.id === view.horseId) : undefined;
+
   return (
     <main className="app">
-      <section className="hero">
-        <p>{project.id} · 源提示词{project.sourceNo} · Port {project.port}</p>
-        <h1>{project.title}</h1>
-        <span>{project.prompt}</span>
-      </section>
-
-      <section className="metrics">
-        {project.metrics.map((metric: string, index: number) => (
-          <article key={metric}>
-            <small>{metric}</small>
-            <strong>{[28, 6, 14, 91][index] ?? 10}</strong>
-          </article>
-        ))}
-      </section>
-
-      <section className="workspace">
-        <aside className="panel">
-          <h2>{project.domain}分类</h2>
-          <div className="chips">
-            {project.filters.map((item: string) => (
-              <button key={item}>{item}</button>
-            ))}
-          </div>
-        </aside>
-
-        <section className="panel form-panel">
-          <div className="heading">
-            <div>
-              <p>专业字段</p>
-              <h2>新增记录</h2>
-            </div>
-            <button className="primary">保存记录</button>
-          </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
-              </label>
-            ))}
-          </div>
-        </section>
-      </section>
-
-      <section className="panel">
-        <div className="heading">
+      <header className="topbar">
+        <div className="brand" onClick={() => setView({ page: "list" })}>
+          <span className="brand-mark">蹄</span>
           <div>
-            <p>近期记录</p>
-            <h2>工作台摘要</h2>
+            <h1>马术蹄铁修整档案台</h1>
+            <small>四蹄对比 · 步态标记 · 复查提醒 · 蹄铁更换史</small>
           </div>
-          <button>导出CSV</button>
         </div>
-        <div className="records">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")}>
-              <b>{String(index + 1).padStart(2, "0")}</b>
-              <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+        <nav className="main-nav">
+          <button
+            className={view.page === "list" ? "active" : ""}
+            onClick={() => setView({ page: "list" })}
+          >
+            马匹列表
+          </button>
+          <button
+            className={view.page === "reminders" ? "active" : ""}
+            onClick={() => setView({ page: "reminders" })}
+          >
+            复查提醒{openCount > 0 && <span className="nav-dot">{openCount}</span>}
+          </button>
+        </nav>
+      </header>
+
+      {view.page === "list" && (
+        <HorseList
+          data={data}
+          onOpenHorse={(horseId, recordId) => setView({ page: "horse", horseId, recordId })}
+          onAddHorse={addHorse}
+          onReset={resetData}
+        />
+      )}
+
+      {view.page === "reminders" && (
+        <Reminders
+          data={data}
+          onOpenHorse={(horseId, recordId) => setView({ page: "horse", horseId, recordId })}
+        />
+      )}
+
+      {view.page === "horse" && currentHorse && (
+        <HorseDetail
+          horse={currentHorse}
+          data={data}
+          initialRecordId={view.recordId}
+          onBack={() => setView({ page: "list" })}
+          onSaveRecord={saveRecord}
+          onSavePhotoNote={savePhotoNote}
+        />
+      )}
+
+      <footer className="footnote">
+        档案保存在本机浏览器中，刷新或重新打开页面不会丢失；正常记录不占用复查提醒名额。
+      </footer>
     </main>
   );
 }
-
-export default App;
